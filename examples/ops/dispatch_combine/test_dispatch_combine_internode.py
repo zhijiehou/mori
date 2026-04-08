@@ -51,6 +51,10 @@ class EpDispatchCombineTestCase:
         dtype=torch.bfloat16,
         hidden_dim=7168,
         combine_dtype=None,
+        use_external_inp_buf=True,
+        block_num=96,
+        warp_per_block=8,
+        rdma_block_num=64,
     ):
         self.rank = rank
         self.gpu_per_node = gpu_per_node
@@ -68,12 +72,13 @@ class EpDispatchCombineTestCase:
             max_num_inp_token_per_rank=(max_tokens + 63) // 64 * 64,
             num_experts_per_rank=16,
             num_experts_per_token=8,
-            warp_num_per_block=8,
-            block_num=96,
+            warp_num_per_block=warp_per_block,
+            block_num=block_num,
             max_token_type_size=2,
             kernel_type=kernel_type_map[kernel_type],
             gpu_per_node=self.gpu_per_node,
-            rdma_block_num=64,
+            use_external_inp_buf=use_external_inp_buf,
+            rdma_block_num=rdma_block_num,
             num_qp_per_pe=num_qp,
             quant_type=quant_type,
         )
@@ -88,12 +93,13 @@ class EpDispatchCombineTestCase:
                 max_num_inp_token_per_rank=(max_tokens + 63) // 64 * 64,
                 num_experts_per_rank=16,
                 num_experts_per_token=8,
-                warp_num_per_block=8,
-                block_num=96,
+                warp_num_per_block=warp_per_block,
+                block_num=block_num,
                 max_token_type_size=2,
                 kernel_type=kernel_type_map[kernel_type],
                 gpu_per_node=self.gpu_per_node,
-                rdma_block_num=64,
+                use_external_inp_buf=use_external_inp_buf,
+                rdma_block_num=rdma_block_num,
                 num_qp_per_pe=num_qp,
                 quant_type=quant_type,
             )
@@ -956,6 +962,10 @@ def sweep_bench_dispatch_combine(
     num_qp,
     sweep_token_interval,
     combine_dtype=None,
+    use_external_inp_buf=True,
+    block_num=96,
+    warp_per_block=8,
+    rdma_block_num=64,
 ):
     world_size = num_node * gpu_per_node
     node_rank = int(os.environ["RANK"])
@@ -972,6 +982,10 @@ def sweep_bench_dispatch_combine(
         num_qp,
         dtype=dtype,
         combine_dtype=combine_dtype,
+        use_external_inp_buf=use_external_inp_buf,
+        block_num=block_num,
+        warp_per_block=warp_per_block,
+        rdma_block_num=rdma_block_num,
     )
     test_case.setup()
 
@@ -1032,6 +1046,10 @@ def test_dispatch_combine(
     cmd="test",
     sweep_token_interval=64,
     combine_dtype=None,
+    use_external_inp_buf=True,
+    block_num=96,
+    warp_per_block=8,
+    rdma_block_num=64,
 ):
     world_size = num_node * gpu_per_node
     node_rank = int(os.environ["RANK"])
@@ -1048,6 +1066,10 @@ def test_dispatch_combine(
             quant_type,
             dtype,
             combine_dtype=combine_dtype,
+            use_external_inp_buf=use_external_inp_buf,
+            block_num=block_num,
+            warp_per_block=warp_per_block,
+            rdma_block_num=rdma_block_num,
         )
         test_case.setup()
         if cmd == "test":
@@ -1070,6 +1092,10 @@ def test_dispatch_combine(
             num_qp,
             sweep_token_interval,
             combine_dtype=combine_dtype,
+            use_external_inp_buf=use_external_inp_buf,
+            block_num=block_num,
+            warp_per_block=warp_per_block,
+            rdma_block_num=rdma_block_num,
         )
     else:
         raise ValueError(f"unsupported command: {cmd}")
@@ -1143,6 +1169,31 @@ parser.add_argument(
         "When different from --dtype, a separate Combine op will be created."
     ),
 )
+parser.add_argument(
+    "--use-external-inp-buf",
+    type=int,
+    default=1,
+    choices=[0, 1],
+    help="Whether to use external input buffer (1=True, 0=False). Default: 1",
+)
+parser.add_argument(
+    "--block-num",
+    type=int,
+    default=96,
+    help="Number of blocks. Default: 96",
+)
+parser.add_argument(
+    "--warp-per-block",
+    type=int,
+    default=8,
+    help="Number of warps per block. Default: 8",
+)
+parser.add_argument(
+    "--rdma-block-num",
+    type=int,
+    default=64,
+    help="Number of RDMA blocks. Default: 64",
+)
 args_cli = parser.parse_args()
 
 if __name__ == "__main__":
@@ -1169,6 +1220,10 @@ if __name__ == "__main__":
             args_cli.cmd,
             args_cli.sweep_token_interval,
             combine_dtype_torch,
+            bool(args_cli.use_external_inp_buf),
+            args_cli.block_num,
+            args_cli.warp_per_block,
+            args_cli.rdma_block_num,
         ),
         nprocs=gpu_per_node,
         join=True,
